@@ -29,11 +29,17 @@ public sealed record LabelStatement(int Line, string Text) : Statement(Line);
 /// <summary>Where playback starts from: a savestate file or a numbered slot.</summary>
 public sealed record SavestateDirective(int Line, string? Path, int? Slot);
 
+/// <summary>The player's controller layout from an @controller block. Inputs are written in this layout.</summary>
+public sealed record ControllerDirective(int Line, ControllerLayout Layout);
+
 public sealed class TasScript
 {
 	public required string SourceName { get; init; }
 
 	public SavestateDirective? Savestate { get; init; }
+
+	/// <summary>Null when the script has no @controller block, i.e. it's written in the game's default layout.</summary>
+	public ControllerDirective? Controller { get; init; }
 
 	public required IReadOnlyList<Statement> Statements { get; init; }
 

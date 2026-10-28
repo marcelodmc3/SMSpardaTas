@@ -14,6 +14,7 @@ public enum TokenKind
 	Dot,
 	Ampersand,
 	Compare,
+	Equals,
 	LeftBrace,
 	RightBrace,
 	LeftParen,
@@ -108,13 +109,13 @@ public static class Lexer
 			if (c is '=' or '!' or '<' or '>')
 			{
 				string op = i + 1 < line.Length && line[i + 1] == '=' ? line.Substring(i, 2) : c.ToString();
-				if (op is "=" or "!")
+				if (op == "!")
 				{
-					string hint = op == "=" ? " (use '==' to compare)" : "";
-					throw new ScriptException(sourceName, lineNumber, start + 1, $"unexpected '{op}'{hint}");
+					throw new ScriptException(sourceName, lineNumber, start + 1, "unexpected '!' (use '!=' to compare)");
 				}
 				i += op.Length;
-				tokens.Add(new Token(TokenKind.Compare, op, lineNumber, start + 1, i + 1));
+				TokenKind opKind = op == "=" ? TokenKind.Equals : TokenKind.Compare;
+				tokens.Add(new Token(opKind, op, lineNumber, start + 1, i + 1));
 				continue;
 			}
 			TokenKind? kind = c switch

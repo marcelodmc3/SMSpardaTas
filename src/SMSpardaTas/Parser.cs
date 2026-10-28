@@ -4,6 +4,11 @@ namespace SMSpardaTas;
 /// Parses a .tas script. The language is line based:
 /// <code>
 /// @savestate "landing_site.State"      ; or: @savestate slot 1
+/// @controller {                        ; optional: the layout the inputs below are written in
+///     shot = Y
+///     dash = X
+///     item_cancel = B
+/// }
 /// @var door_timer $0925 u16            ; name your own RAM variables
 /// Right+B 60                           ; hold buttons for N frames (default 1)
 /// . 10                                 ; neutral input ("wait 10" also works)
@@ -45,6 +50,8 @@ public sealed class Parser
 
 	private SavestateDirective? _savestate;
 
+	private ControllerDirective? _controller;
+
 	private bool _seenStatement;
 
 	private Parser(string text, string sourceName)
@@ -66,6 +73,7 @@ public sealed class Parser
 		{
 			SourceName = sourceName,
 			Savestate = parser._savestate,
+			Controller = parser._controller,
 			Statements = statements,
 			Symbols = parser._symbols
 		};
@@ -263,8 +271,11 @@ public sealed class Parser
 			case "var":
 				ParseVar();
 				break;
+			case "controller":
+				ParseController(directive);
+				break;
 			default:
-				throw Error(directive, $"unknown directive '@{directive.Text}' (known: @savestate, @var)");
+				throw Error(directive, $"unknown directive '@{directive.Text}' (known: @savestate, @controller, @var)");
 		}
 		ExpectEndOfLine();
 	}
@@ -304,6 +315,80 @@ public sealed class Parser
 		{
 			throw Error(token, "expected a quoted savestate path or 'slot N'");
 		}
+	}
+
+	private void ParseController(Token directive)
+	{
+		if (_controller != null)
+		{
+			throw Error(directive, "@controller can only be used once");
+		}
+		if (_seenStatement)
+		{
+			throw Error(directive, "@controller must come before any input");
+		}
+		Expect(TokenKind.LeftBrace, "'{' after @controller");
+		ExpectEndOfLine();
+
+		Dictionary<GameAction, (Buttons Button, Token Token)> assigned = [];
+		while (true)
+		{
+			while (Peek().Kind == TokenKind.Newline)
+			{
+				Advance();
+			}
+			if (Peek().Kind == TokenKind.RightBrace)
+			{
+				Advance();
+				break;
+			}
+			if (Peek().Kind == TokenKind.End)
+			{
+				throw Error(Peek(), "missing '}' to close the @controller block");
+			}
+			Token actionToken = Expect(TokenKind.Identifier, "an action name");
+			if (!ControllerLayout.TryFindAction(actionToken.Text, out GameAction action))
+			{
+				string valid = string.Join(", ", ControllerLayout.Actions.Select(a => a.Name));
+				throw Error(actionToken, $"unknown action '{actionToken.Text}' (actions are {valid})");
+			}
+			if (assigned.ContainsKey(action))
+			{
+				throw Error(actionToken, $"'{action.Name}' is set twice");
+			}
+			Expect(TokenKind.Equals, $"'=' after '{action.Name}'");
+			Token buttonToken = Expect(TokenKind.Identifier, "a button name");
+			if (!ButtonNames.TryParse(buttonToken.Text, out Buttons button))
+			{
+				throw Error(buttonToken, $"unknown button '{buttonToken.Text}'");
+			}
+			if ((button & ControllerLayout.Remappable) == 0)
+			{
+				throw Error(buttonToken, $"{button} can't be bound to an action: the d-pad and Start are fixed in Super Metroid");
+			}
+			assigned[action] = (button, buttonToken);
+			ExpectEndOfLine();
+		}
+
+		// Actions the block leaves out keep their default button; every button may serve only one action.
+		Dictionary<GameAction, Buttons> bindings = [];
+		Dictionary<Buttons, GameAction> owners = [];
+		foreach (GameAction action in ControllerLayout.Actions)
+		{
+			Buttons button = assigned.TryGetValue(action, out var set) ? set.Button : action.DefaultButton;
+			if (owners.TryGetValue(button, out GameAction? other))
+			{
+				Token at = assigned.TryGetValue(action, out var mine) && (!assigned.TryGetValue(other, out var theirs) || mine.Token.Line > theirs.Token.Line)
+					? mine.Token
+					: assigned[other].Token;
+				throw Error(at, $"{button} is used for both {Describe(other)} and {Describe(action)}; each action needs its own button");
+			}
+			owners[button] = action;
+			bindings[action] = button;
+		}
+		_controller = new ControllerDirective(directive.Line, new ControllerLayout(bindings));
+
+		string Describe(GameAction action) => assigned.ContainsKey(action) ? action.Name : $"{action.Name} (its default)";
 	}
 
 	private void ParseVar()
@@ -376,6 +461,10 @@ public sealed class Parser
 	{
 		Expr left = ParseOperand();
 		Token op = Peek();
+		if (op.Kind == TokenKind.Equals)
+		{
+			throw Error(op, "unexpected '=' (use '==' to compare)");
+		}
 		if (op.Kind != TokenKind.Compare)
 		{
 			throw Error(op, $"expected a comparison (==, !=, <, <=, >, >=), got {Describe(op)}");

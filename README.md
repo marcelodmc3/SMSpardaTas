@@ -42,6 +42,7 @@ One statement per line. `#` or `;` starts a comment.
 
 ```text
 @savestate slot 1                  ; BizHawk slots 1-9, or a file: @savestate "states/start.State"
+# @controller { ... }               ; optional block: your controller layout (see "Controller layout")
 @var door_timer $0925 u16          ; name your own RAM variables (u8, u16, s8, s16; default u16)
 
 Right+B 60                         ; hold buttons for 60 frames
@@ -59,6 +60,36 @@ label "Parlor"                     ; shown on the HUD and logged with its frame 
 ```
 
 **Buttons:** `Up Down Left Right Select Start Y B X A L R` (case-insensitive), joined with `+`.
+
+### Controller layout
+
+By default, scripts are written with the game's default controller layout. If you play with a
+different one, describe it in an `@controller` block before any input. Every input and `hold` in
+the script is then written in *your* layout, and the compiler translates it to the game's default
+buttons:
+
+```text
+@controller {
+    shot        = Y          ; default X
+    jump        = A          ; default A
+    dash        = X          ; default B
+    item_select = Select     ; default Select
+    item_cancel = B          ; default Y
+    angle_up    = R          ; default R
+    angle_down  = L          ; default L
+}
+
+Left+X 30                    ; dash left   -> plays Left+B
+Left+X+A+Y 4                 ; dash, jump and shoot -> plays Left+B+A+X
+```
+
+- Actions you leave out keep their default button. Each of `A B X Y Select L R` must end up on exactly
+  one action. The d-pad and Start can't be remapped.
+- The HUD and the generated Lua comments show buttons the way you wrote them.
+- The game in your savestate must be on its **default** controller settings. With an `@controller`
+  block, the script checks the game's bindings before the first frame. If they aren't the default,
+  it stops with the values it found (`shot_binding`, `jump_binding`, ... are also usable in conditions).
+- Conditions on `input` / `new_input` read the game's raw button bits, so they aren't translated.
 
 **Frames** are emulator frames with lag frames included, the same as in a movie file. If Samus
 lags for 3 frames during a door, a `Right 60` still lasts 60 emulator frames.

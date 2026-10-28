@@ -22,6 +22,22 @@ public static class LuaGenerator
 		List<Statement> steps = [];
 		Flatten(script, script.Statements, steps);
 
+		// Inputs are written in the player's layout; the emulator has to press the game's default buttons.
+		ControllerLayout layout = script.Controller?.Layout ?? ControllerLayout.Default;
+		for (int i = 0; i < steps.Count; i++)
+		{
+			steps[i] = steps[i] switch
+			{
+				InputStatement s => s with { Buttons = layout.ToGame(s.Buttons) },
+				WaitUntilStatement s => s with { Hold = layout.ToGame(s.Hold) },
+				Statement s => s
+			};
+		}
+		if (script.Controller != null)
+		{
+			steps.Insert(0, DefaultLayoutCheck(script));
+		}
+
 		Dictionary<(Expr, string), int> conditions = [];
 		List<(Expr Expr, string Text)> conditionList = [];
 		SortedSet<int> masks = [0];
@@ -66,7 +82,7 @@ public static class LuaGenerator
 		lua.AppendLine("local MASKS = {");
 		foreach (int mask in masks)
 		{
-			lua.AppendLine($"\t[{LuaNumber(mask)}] = {LuaString(ButtonNames.Format((Buttons)mask))},");
+			lua.AppendLine($"\t[{LuaNumber(mask)}] = {LuaString(ButtonNames.Format(layout.ToPlayer((Buttons)mask)))},");
 		}
 		lua.AppendLine("}");
 		lua.AppendLine();
@@ -91,7 +107,7 @@ public static class LuaGenerator
 		{
 			lua.AppendLine(step switch
 			{
-				InputStatement s => $"\t{{ \"input\", {s.Line}, {LuaNumber((int)s.Buttons)}, {s.Frames} }}, -- {ButtonNames.Format(s.Buttons)}",
+				InputStatement s => $"\t{{ \"input\", {s.Line}, {LuaNumber((int)s.Buttons)}, {s.Frames} }}, -- {ButtonNames.Format(layout.ToPlayer(s.Buttons))}",
 				WaitUntilStatement s => $"\t{{ \"wait\", {s.Line}, {conditions[(s.Condition, s.ConditionText)]}, {LuaNumber((int)s.Hold)}, {s.Timeout} }},",
 				AssertStatement s => $"\t{{ \"assert\", {s.Line}, {conditions[(s.Condition, s.ConditionText)]}, {(s.Message == null ? "false" : LuaString(s.Message))} }},",
 				LabelStatement s => $"\t{{ \"label\", {s.Line}, {LuaString(s.Text)} }},",
@@ -112,6 +128,23 @@ public static class LuaGenerator
 				conditions[(expr, text)] = conditionList.Count;
 			}
 		}
+	}
+
+	/// <summary>
+	/// The translation assumes the game is on its default controller settings, so check the game's
+	/// binding variables before the first frame instead of silently pressing the wrong buttons.
+	/// </summary>
+	private static AssertStatement DefaultLayoutCheck(TasScript script)
+	{
+		Expr? condition = null;
+		foreach (GameAction action in ControllerLayout.Actions)
+		{
+			RamSymbol symbol = script.Symbols[action.BindingSymbol];
+			Expr check = new BinaryExpr("==", new MemoryExpr(symbol.Address, symbol.Type, symbol.Name), new NumberExpr((int)action.DefaultButton));
+			condition = condition == null ? check : new BinaryExpr("and", condition, check);
+		}
+		return new AssertStatement(script.Controller!.Line, condition!, "the game uses its default controller settings",
+			"@controller translates inputs to the game's default controller settings, but the game in this savestate is set up differently");
 	}
 
 	private static void Flatten(TasScript script, IReadOnlyList<Statement> statements, List<Statement> output)

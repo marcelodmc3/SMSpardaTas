@@ -163,6 +163,42 @@ public class LuaRuntimeTests
 		Assert.DoesNotContain(run.Log, l => l.Contains("assert failed"));
 	}
 
+	// The game's default bindings ($09B2..$09BF), little-endian.
+	private const string DefaultBindingsRam = """
+		__ram[0x09B2], __ram[0x09B3] = 0x40, 0x00
+		__ram[0x09B4], __ram[0x09B5] = 0x80, 0x00
+		__ram[0x09B6], __ram[0x09B7] = 0x00, 0x80
+		__ram[0x09B8], __ram[0x09B9] = 0x00, 0x40
+		__ram[0x09BA], __ram[0x09BB] = 0x00, 0x20
+		__ram[0x09BC], __ram[0x09BD] = 0x20, 0x00
+		__ram[0x09BE], __ram[0x09BF] = 0x10, 0x00
+
+		""";
+
+	private const string PlayerLayout = "@controller {\n  shot = Y\n  dash = X\n  item_cancel = B\n}\n";
+
+	[Fact]
+	public void Presses_the_games_buttons_for_a_player_layout()
+	{
+		Run run = Execute(PlayerLayout + "Left+X 2\nLeft+X+A+Y\nB", DefaultBindingsRam);
+
+		Assert.Equal(["B+Left", "B+Left", "A+B+Left+X", "Y"], run.Inputs);
+		Assert.Contains("finished after 4 frames", run.Log.Last());
+	}
+
+	[Fact]
+	public void Stops_before_the_first_frame_when_the_game_is_not_on_the_default_layout()
+	{
+		// The savestate's game has shot on Y instead of X.
+		Run run = Execute(PlayerLayout + "Y 5", DefaultBindingsRam + "__ram[0x09B2], __ram[0x09B3] = 0x00, 0x40\n");
+
+		Assert.Empty(run.Inputs);
+		Assert.True(run.Paused);
+		string failure = Assert.Single(run.Log);
+		Assert.Contains("line 1: @controller translates inputs to the game's default controller settings", failure);
+		Assert.Contains("shot_binding=16384 (0x4000)", failure);
+	}
+
 	[Fact]
 	public void Labels_are_logged_with_the_frame_they_start_on()
 	{
