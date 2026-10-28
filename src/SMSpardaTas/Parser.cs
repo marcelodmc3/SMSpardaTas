@@ -1,4 +1,4 @@
-namespace SmTas;
+namespace SMSpardaTas;
 
 /// <summary>
 /// Parses a .tas script. The language is line based:

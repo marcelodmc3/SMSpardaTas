@@ -1,4 +1,4 @@
-# SmTas
+# SMSpardaTas
 
 Compiles a Super Metroid TAS script (`.tas`) into a Lua script that plays it back frame by frame in
 **BizHawk**. BizHawk handles the input injection, so playback is frame-exact and repeatable from a
@@ -6,7 +6,7 @@ savestate.
 
 ## Build and run
 
-Needs the .NET 8 SDK or newer.
+Needs the .NET 10 SDK.
 
 ```bash
 dotnet build
@@ -14,16 +14,16 @@ dotnet test
 ```
 
 ```bash
-dotnet run --project src/SmTas -- compile samples/landing_site.tas
+dotnet run --project src/SMSpardaTas -- compile samples/landing_site.tas
 ```
 
-The executable is `src/SmTas/bin/Debug/net8.0/smtas.exe`:
+The executable is `src/SMSpardaTas/bin/Debug/net10.0/SMSpardaTas.exe`:
 
 | Command | What it does |
 |---|---|
-| `smtas compile <script.tas> [-o out.lua] [--no-hud]` | Writes `<script>.bizhawk.lua` next to the script |
-| `smtas check <script.tas>` | Parses the script and prints a summary without writing anything |
-| `smtas symbols` | Lists the built-in RAM variables |
+| `SMSpardaTas compile <script.tas> [-o out.lua] [--no-hud]` | Writes `<script>.bizhawk.lua` next to the script |
+| `SMSpardaTas check <script.tas>` | Parses the script and prints a summary without writing anything |
+| `SMSpardaTas symbols` | Lists the built-in RAM variables |
 
 Errors look like `script.tas(12,7): error: unknown button 'Q' ...`.
 
@@ -76,7 +76,7 @@ stops and the log shows the values of every variable in the condition, e.g.
 `input & $80 == $80`.
 
 - Numbers: `60`, `0x91F8`, `$91F8` and negative values like `-1` (for `s8`/`s16` variables).
-- Variables: built-in names (`smtas symbols`), your own `@var` declarations, or raw reads like
+- Variables: built-in names (`SMSpardaTas symbols`), your own `@var` declarations, or raw reads like
   `u16[$0AF6]` / `u8[$7F:1234]`.
 - Addresses without a bank are taken as `$7E`.
 

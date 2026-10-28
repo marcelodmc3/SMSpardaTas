@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace SmTas;
+namespace SMSpardaTas;
 
 public enum TokenKind
 {

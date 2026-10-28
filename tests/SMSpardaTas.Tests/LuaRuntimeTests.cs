@@ -1,6 +1,6 @@
 using MoonSharp.Interpreter;
 
-namespace SmTas.Tests;
+namespace SMSpardaTas.Tests;
 
 /// <summary>
 /// Runs the generated Lua under MoonSharp against a fake BizHawk API, so these tests check
@@ -168,7 +168,7 @@ public class LuaRuntimeTests
 	{
 		Run run = Execute(". 5\nlabel \"Parlor\"\nA");
 
-		Assert.Equal("SmTas: frame 5: Parlor", run.Log[0]);
+		Assert.Equal("SMSpardaTas: frame 5: Parlor", run.Log[0]);
 	}
 
 	[Fact]

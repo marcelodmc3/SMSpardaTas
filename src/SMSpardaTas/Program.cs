@@ -1,14 +1,14 @@
-namespace SmTas;
+namespace SMSpardaTas;
 
 internal static class Program
 {
 	private const string Usage = """
-		SmTas - compiles Super Metroid TAS scripts into BizHawk Lua playback scripts
+		SMSpardaTas - compiles Super Metroid TAS scripts into BizHawk Lua playback scripts
 
 		Usage:
-		  smtas compile <script.tas> [-o <out.lua>] [--no-hud]
-		  smtas check <script.tas>
-		  smtas symbols
+		  SMSpardaTas compile <script.tas> [-o <out.lua>] [--no-hud]
+		  SMSpardaTas check <script.tas>
+		  SMSpardaTas symbols
 
 		compile   Writes a Lua script (default: <script>.bizhawk.lua next to the script).
 		check     Parses the script and prints a summary without writing anything.
@@ -127,7 +127,7 @@ internal static class Program
 	private static int Fail(string message)
 	{
 		Console.Error.WriteLine($"error: {message}");
-		Console.Error.WriteLine("Run 'smtas --help' for usage.");
+		Console.Error.WriteLine("Run 'SMSpardaTas --help' for usage.");
 		return 1;
 	}
 }

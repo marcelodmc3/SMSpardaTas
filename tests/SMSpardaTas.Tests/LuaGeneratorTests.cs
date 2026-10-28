@@ -1,4 +1,4 @@
-namespace SmTas.Tests;
+namespace SMSpardaTas.Tests;
 
 public class LuaGeneratorTests
 {
@@ -36,7 +36,7 @@ public class LuaGeneratorTests
 	[Fact]
 	public void Resolves_relative_savestate_paths_against_the_script_folder()
 	{
-		string folder = Path.Combine(Path.GetTempPath(), "smtas");
+		string folder = Path.Combine(Path.GetTempPath(), "SMSpardaTas");
 		string lua = Generate("@savestate \"states/a.State\"", baseDirectory: folder).Lua;
 
 		string expected = LuaGenerator.LuaString(Path.Combine(folder, "states", "a.State"));

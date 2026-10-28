@@ -1,4 +1,4 @@
-namespace SmTas;
+namespace SMSpardaTas;
 
 /// <summary>
 /// SNES controller buttons. The bit layout matches Super Metroid's controller 1 input

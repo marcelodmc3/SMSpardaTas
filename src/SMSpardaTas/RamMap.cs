@@ -1,4 +1,4 @@
-namespace SmTas;
+namespace SMSpardaTas;
 
 public enum RamType
 {

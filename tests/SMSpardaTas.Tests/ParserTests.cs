@@ -1,4 +1,4 @@
-namespace SmTas.Tests;
+namespace SMSpardaTas.Tests;
 
 public class ParserTests
 {

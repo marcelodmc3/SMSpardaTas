@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SMSpardaTas/SMSpardaTas.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SMSpardaTas.Tests/SMSpardaTas.Tests.csproj" />
+  </Folder>
+</Solution>
