@@ -1,0 +1,32 @@
+# Example: run left out of the Landing Site.
+# Make the savestate yourself: stand Samus in the Landing Site with control,
+# and save it to BizHawk slot 1. You can also load a savestate file instead:
+#   @savestate "landing_site.State"   (path relative to this script)
+@savestate slot 1
+
+# Your own names for RAM map entries (default type is u16)
+@var door_timer $0925
+
+assert room == $91F8 "start from the Landing Site"
+assert game_state == 8
+
+label "Landing Site"
+Left+B 30              ; start running left
+Left+B+A 15            ; running jump
+Left+B 40
+
+label "Pulo + Tiro"
+# Short-hop a few times
+repeat 8 {
+    Left+B+A+X 16
+    Left+B+X   8
+}
+
+# Keep running until the door transition starts, then wait for it to finish
+label "Corre + Tiro"
+wait_until game_state == $0B hold Left+B+X timeout 400
+wait_until game_state == 8 timeout 300
+
+label "Parlor"
+assert room != $91F8 "should have left the Landing Site"
+. 10
