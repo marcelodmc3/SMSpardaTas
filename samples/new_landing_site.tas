@@ -9,23 +9,44 @@
     angle_down  = L          ; default L
 }
 
-assert room == $91F8 "É Landing Site?"
+@routine armpump_left {
+    repeat 60 {
+        Left+X+R
+		Left+X
+        Left+X+L
+		Left+X
+    }
+}
+
+@routine armpump_right {
+    repeat 60 {
+        Right+X+R
+		Right+X
+        Right+X+L
+		Right+X
+    }
+}
+
+assert room == $91F8 "Landing Site?"
 assert game_state == 8
 
 label "Landing Site"
-Left+X 30              ; start running left
-Left+X+A 15            ; running jump
+Left+X 30
+Left+X+A 15
 Left+X 40
 
-label "Pulo + Tiro"
-# Pula e atira algumas vezes
-repeat 8 {
-    Left+X+A+Y 16
-    Left+X+Y   8
-}
+call armpump_left
+call armpump_right
+
+;label "Jump + Shoot"
+;# Pula e atira algumas vezes
+;repeat 8 {
+;    Left+X+A+Y 16
+;    Left+X+Y   8
+;}
 
 # Corre e atira até atravessar a porta
-label "Corre + Tiro"
+label "Run + Shoot"
 wait_until game_state == $0B hold Left+X+Y timeout 400
 wait_until game_state == 8 timeout 300
 

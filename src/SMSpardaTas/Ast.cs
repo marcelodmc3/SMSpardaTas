@@ -26,6 +26,11 @@ public sealed record AssertStatement(int Line, Expr Condition, string ConditionT
 
 public sealed record LabelStatement(int Line, string Text) : Statement(Line);
 
+/// <summary>A named block of statements declared with @routine and played wherever it's called.</summary>
+public sealed record Routine(string Name, int Line, IReadOnlyList<Statement> Body);
+
+public sealed record CallStatement(int Line, Routine Routine) : Statement(Line);
+
 /// <summary>Where playback starts from: a savestate file or a numbered slot.</summary>
 public sealed record SavestateDirective(int Line, string? Path, int? Slot);
 
@@ -42,6 +47,9 @@ public sealed class TasScript
 	public ControllerDirective? Controller { get; init; }
 
 	public required IReadOnlyList<Statement> Statements { get; init; }
+
+	/// <summary>Routines in declaration order.</summary>
+	public required IReadOnlyList<Routine> Routines { get; init; }
 
 	/// <summary>Built-in symbols plus the script's own @var declarations.</summary>
 	public required IReadOnlyDictionary<string, RamSymbol> Symbols { get; init; }

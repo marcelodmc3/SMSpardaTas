@@ -44,6 +44,7 @@ One statement per line. `#` or `;` starts a comment.
 @savestate slot 1                  ; BizHawk slots 1-9, or a file: @savestate "states/start.State"
 # @controller { ... }               ; optional block: your controller layout (see "Controller layout")
 @var door_timer $0925 u16          ; name your own RAM variables (u8, u16, s8, s16; default u16)
+# @routine name { ... }             ; reusable movements, played with "call name" (see "Routines")
 
 Right+B 60                         ; hold buttons for 60 frames
 Right+B+A                          ; frame count defaults to 1
@@ -90,6 +91,46 @@ Left+X+A+Y 4                 ; dash, jump and shoot -> plays Left+B+A+X
   block, the script checks the game's bindings before the first frame. If they aren't the default,
   it stops with the values it found (`shot_binding`, `jump_binding`, ... are also usable in conditions).
 - Conditions on `input` / `new_input` read the game's raw button bits, so they aren't translated.
+
+### Routines
+
+Movements you use over and over (downbacks, moonfalls, downgrabs, armpumps, shortcharges...) can be written
+once as a routine and played with `call`:
+
+```text
+@controller { ... }          ; if you have one, it comes first
+
+@routine armpump_left {      ; run left for 60 frames, alternating angle up and angle down
+    repeat 30 {
+        Left+B+R
+        Left+B+L
+    }
+}
+
+@routine downback {
+    Down 2
+    Left 1
+}
+
+label "Landing Site"
+call armpump_left
+call downback
+repeat 3 {                   ; calls work anywhere a statement does
+    call downback
+}
+```
+
+- Routines are declared after `@controller` and before playback starts (the first input or other
+  statement outside a routine).
+- A body can hold anything a script can: inputs, `repeat`, `wait_until`, `assert`, `label`, and
+  `call`s to routines declared *above* it. A routine can't call itself.
+- Routines are written in your controller layout, like the rest of the script.
+- Routines don't take parameters. For 80 frames of armpumping instead of 60, write another routine
+  or write the inputs out directly.
+- Routine names follow the same rules as variables: letters, digits and `_`. They can't be a button
+  name (`a`, `left`...) or a keyword (`wait`, `repeat`...).
+- On the HUD and in failure messages, a step inside a routine shows where it was called from, e.g.
+  `line 14 in downback, called from line 40`. Compiling warns about routines that are never called.
 
 **Frames** are emulator frames with lag frames included, the same as in a movie file. If Samus
 lags for 3 frames during a door, a `Right 60` still lasts 60 emulator frames.

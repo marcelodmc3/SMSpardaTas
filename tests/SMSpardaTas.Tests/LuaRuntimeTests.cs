@@ -200,6 +200,24 @@ public class LuaRuntimeTests
 	}
 
 	[Fact]
+	public void Plays_a_routine_every_time_it_is_called()
+	{
+		Run run = Execute("@routine armpump {\n  repeat 2 {\n    Left+B+R\n    Left+B+L\n  }\n}\ncall armpump\nA\ncall armpump");
+
+		string[] armpump = ["B+Left+R", "B+L+Left", "B+Left+R", "B+L+Left"];
+		Assert.Equal([.. armpump, "A", .. armpump], run.Inputs);
+	}
+
+	[Fact]
+	public void A_failure_inside_a_routine_reports_the_call_site()
+	{
+		Run run = Execute("@routine check_room {\n  A\n  assert room == $91F8 \"not in the Landing Site\"\n}\nB\ncall check_room");
+
+		Assert.Equal(["B", "A"], run.Inputs);
+		Assert.Contains("line 3 in check_room, called from line 6: not in the Landing Site", Assert.Single(run.Log));
+	}
+
+	[Fact]
 	public void Labels_are_logged_with_the_frame_they_start_on()
 	{
 		Run run = Execute(". 5\nlabel \"Parlor\"\nA");

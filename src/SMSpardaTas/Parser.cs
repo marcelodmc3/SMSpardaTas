@@ -10,6 +10,13 @@ namespace SMSpardaTas;
 ///     item_cancel = B
 /// }
 /// @var door_timer $0925 u16            ; name your own RAM variables
+/// @routine armpump_left {              ; declared before playback starts, played with "call"
+///     repeat 30 {
+///         Left+B+R
+///         Left+B+L
+///     }
+/// }
+/// call armpump_left
 /// Right+B 60                           ; hold buttons for N frames (default 1)
 /// . 10                                 ; neutral input ("wait 10" also works)
 /// repeat 3 {
@@ -32,7 +39,7 @@ public sealed class Parser
 
 	private static readonly HashSet<string> Keywords = new(StringComparer.OrdinalIgnoreCase)
 	{
-		"repeat", "wait", "wait_until", "assert", "label", "hold", "timeout",
+		"repeat", "wait", "wait_until", "assert", "label", "hold", "timeout", "call",
 		"and", "or", "not", "slot", "none", "u8", "u16", "s8", "s16"
 	};
 
@@ -52,6 +59,13 @@ public sealed class Parser
 
 	private ControllerDirective? _controller;
 
+	// Ordered so TasScript.Routines keeps declaration order.
+	private readonly OrderedDictionary<string, Routine> _routines = new(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>Name of the routine whose body is being parsed, if any.</summary>
+	private string? _currentRoutine;
+
+	/// <summary>True once playback has started, i.e. a statement appeared outside any routine.</summary>
 	private bool _seenStatement;
 
 	private Parser(string text, string sourceName)
@@ -68,18 +82,20 @@ public sealed class Parser
 	public static TasScript Parse(string text, string sourceName)
 	{
 		Parser parser = new(text, sourceName);
-		List<Statement> statements = parser.ParseBlock(topLevel: true);
+		List<Statement> statements = parser.ParseBlock(null);
 		return new TasScript
 		{
 			SourceName = sourceName,
 			Savestate = parser._savestate,
 			Controller = parser._controller,
 			Statements = statements,
+			Routines = parser._routines.Values.ToList(),
 			Symbols = parser._symbols
 		};
 	}
 
-	private List<Statement> ParseBlock(bool topLevel)
+	/// <param name="block">Null for the top level, otherwise the kind of block being parsed (for messages).</param>
+	private List<Statement> ParseBlock(string? block)
 	{
 		List<Statement> statements = [];
 		while (true)
@@ -91,23 +107,23 @@ public sealed class Parser
 			Token token = Peek();
 			if (token.Kind == TokenKind.End)
 			{
-				if (!topLevel)
+				if (block != null)
 				{
-					throw Error(token, "missing '}' to close a repeat block");
+					throw Error(token, $"missing '}}' to close a {block}");
 				}
 				return statements;
 			}
 			if (token.Kind == TokenKind.RightBrace)
 			{
-				if (topLevel)
+				if (block == null)
 				{
-					throw Error(token, "'}' without a matching repeat block");
+					throw Error(token, "'}' without a matching repeat or @routine block");
 				}
 				Advance();
 				ExpectEndOfLine();
 				return statements;
 			}
-			Statement? statement = ParseStatement(topLevel);
+			Statement? statement = ParseStatement(block);
 			if (statement != null)
 			{
 				statements.Add(statement);
@@ -115,21 +131,26 @@ public sealed class Parser
 		}
 	}
 
-	private Statement? ParseStatement(bool topLevel)
+	private Statement? ParseStatement(string? block)
 	{
 		Token token = Peek();
 		if (token.Kind == TokenKind.Directive)
 		{
-			ParseDirective(topLevel);
+			ParseDirective(block);
 			return null;
 		}
-		_seenStatement = true;
+		if (_currentRoutine == null)
+		{
+			_seenStatement = true;
+		}
 		if (token.Kind == TokenKind.Identifier)
 		{
 			switch (token.Text.ToLowerInvariant())
 			{
 				case "repeat":
 					return ParseRepeat();
+				case "call":
+					return ParseCall();
 				case "wait":
 				{
 					Advance();
@@ -207,7 +228,7 @@ public sealed class Parser
 		int count = ExpectCount("a repeat count", 1);
 		Expect(TokenKind.LeftBrace, "'{' after the repeat count");
 		ExpectEndOfLine();
-		List<Statement> body = ParseBlock(topLevel: false);
+		List<Statement> body = ParseBlock("repeat block");
 		return new RepeatStatement(keyword.Line, count, body);
 	}
 
@@ -256,12 +277,12 @@ public sealed class Parser
 		return new AssertStatement(keyword.Line, condition, conditionText, message);
 	}
 
-	private void ParseDirective(bool topLevel)
+	private void ParseDirective(string? block)
 	{
 		Token directive = Advance();
-		if (!topLevel)
+		if (block != null)
 		{
-			throw Error(directive, $"@{directive.Text} is not allowed inside a repeat block");
+			throw Error(directive, $"@{directive.Text} is not allowed inside a {block}");
 		}
 		switch (directive.Text.ToLowerInvariant())
 		{
@@ -274,10 +295,52 @@ public sealed class Parser
 			case "controller":
 				ParseController(directive);
 				break;
+			case "routine":
+				// The body's closing '}' already ends the line.
+				ParseRoutine(directive);
+				return;
 			default:
-				throw Error(directive, $"unknown directive '@{directive.Text}' (known: @savestate, @controller, @var)");
+				throw Error(directive, $"unknown directive '@{directive.Text}' (known: @savestate, @controller, @routine, @var)");
 		}
 		ExpectEndOfLine();
+	}
+
+	private void ParseRoutine(Token directive)
+	{
+		if (_seenStatement)
+		{
+			throw Error(directive, "@routine must be declared before playback starts (before any input)");
+		}
+		Token name = Expect(TokenKind.Identifier, "a routine name");
+		if (Keywords.Contains(name.Text) || ButtonNames.TryParse(name.Text, out _))
+		{
+			throw Error(name, $"'{name.Text}' is reserved and can't be used as a routine name");
+		}
+		if (_routines.TryGetValue(name.Text, out Routine? existing))
+		{
+			throw Error(name, $"routine '{name.Text}' is already declared on line {existing.Line}");
+		}
+		Expect(TokenKind.LeftBrace, "'{' after the routine name");
+		ExpectEndOfLine();
+		_currentRoutine = name.Text;
+		List<Statement> body = ParseBlock("@routine block");
+		_currentRoutine = null;
+		_routines[name.Text] = new Routine(name.Text, directive.Line, body);
+	}
+
+	private Statement ParseCall()
+	{
+		Token keyword = Advance();
+		Token name = Expect(TokenKind.Identifier, "a routine name after 'call'");
+		if (!_routines.TryGetValue(name.Text, out Routine? routine))
+		{
+			string message = string.Equals(name.Text, _currentRoutine, StringComparison.OrdinalIgnoreCase)
+				? $"routine '{name.Text}' can't call itself"
+				: $"unknown routine '{name.Text}' (routines must be declared with @routine before they're called)";
+			throw Error(name, message);
+		}
+		ExpectEndOfLine();
+		return new CallStatement(keyword.Line, routine);
 	}
 
 	private void ParseSavestate(Token directive)
@@ -326,6 +389,10 @@ public sealed class Parser
 		if (_seenStatement)
 		{
 			throw Error(directive, "@controller must come before any input");
+		}
+		if (_routines.Count > 0)
+		{
+			throw Error(directive, "@controller must come before any @routine");
 		}
 		Expect(TokenKind.LeftBrace, "'{' after @controller");
 		ExpectEndOfLine();

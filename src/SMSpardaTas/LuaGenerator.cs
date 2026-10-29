@@ -8,7 +8,7 @@ public sealed record GeneratorOptions(bool Hud = true, string? SavestateBaseDire
 public sealed record GeneratorResult(string Lua, long FixedFrames, int Waits, int Steps, IReadOnlyList<string> Warnings);
 
 /// <summary>
-/// Turns a parsed script into a standalone BizHawk Lua playback script. Repeat blocks are expanded at
+/// Turns a parsed script into a standalone BizHawk Lua playback script. Repeat blocks and routine calls are expanded at
 /// compile time into a flat step table, and a small runtime loop plays it back one emulator
 /// frame at a time: set the joypad, advance a frame, repeat.
 /// </summary>
@@ -19,23 +19,27 @@ public static class LuaGenerator
 	public static GeneratorResult Generate(TasScript script, GeneratorOptions options)
 	{
 		List<string> warnings = [];
-		List<Statement> steps = [];
-		Flatten(script, script.Statements, steps);
+		List<Step> steps = [];
+		HashSet<Routine> called = [];
+		Flatten(script, script.Statements, steps, null, called);
 
 		// Inputs are written in the player's layout; the emulator has to press the game's default buttons.
 		ControllerLayout layout = script.Controller?.Layout ?? ControllerLayout.Default;
 		for (int i = 0; i < steps.Count; i++)
 		{
-			steps[i] = steps[i] switch
+			steps[i] = steps[i] with
 			{
-				InputStatement s => s with { Buttons = layout.ToGame(s.Buttons) },
-				WaitUntilStatement s => s with { Hold = layout.ToGame(s.Hold) },
-				Statement s => s
+				Statement = steps[i].Statement switch
+				{
+					InputStatement s => s with { Buttons = layout.ToGame(s.Buttons) },
+					WaitUntilStatement s => s with { Hold = layout.ToGame(s.Hold) },
+					Statement s => s
+				}
 			};
 		}
 		if (script.Controller != null)
 		{
-			steps.Insert(0, DefaultLayoutCheck(script));
+			steps.Insert(0, new Step(DefaultLayoutCheck(script), null));
 		}
 
 		Dictionary<(Expr, string), int> conditions = [];
@@ -43,9 +47,9 @@ public static class LuaGenerator
 		SortedSet<int> masks = [0];
 		long fixedFrames = 0;
 		int waits = 0;
-		foreach (Statement step in steps)
+		foreach (Step step in steps)
 		{
-			switch (step)
+			switch (step.Statement)
 			{
 				case InputStatement input:
 					masks.Add((int)input.Buttons);
@@ -64,6 +68,10 @@ public static class LuaGenerator
 		if (script.Savestate == null)
 		{
 			warnings.Add("no @savestate: playback starts from whatever frame the emulator is on when the script is loaded, so it won't be repeatable");
+		}
+		foreach (Routine routine in script.Routines.Where(r => !called.Contains(r)))
+		{
+			warnings.Add($"routine '{routine.Name}' (line {routine.Line}) is never called");
 		}
 
 		StringBuilder lua = new();
@@ -102,16 +110,18 @@ public static class LuaGenerator
 
 		lua.AppendLine("-- { \"input\", line, mask, frames }  { \"wait\", line, cond, hold mask, timeout }");
 		lua.AppendLine("-- { \"assert\", line, cond, message }  { \"label\", line, text }");
+		lua.AppendLine("-- Steps from a routine give their line as a string that also says where it was called from.");
 		lua.AppendLine("local STEPS = {");
-		foreach (Statement step in steps)
+		foreach ((Statement statement, string? where) in steps)
 		{
-			lua.AppendLine(step switch
+			string line = where == null ? statement.Line.ToString(CultureInfo.InvariantCulture) : LuaString($"{statement.Line} in {where}");
+			lua.AppendLine(statement switch
 			{
-				InputStatement s => $"\t{{ \"input\", {s.Line}, {LuaNumber((int)s.Buttons)}, {s.Frames} }}, -- {ButtonNames.Format(layout.ToPlayer(s.Buttons))}",
-				WaitUntilStatement s => $"\t{{ \"wait\", {s.Line}, {conditions[(s.Condition, s.ConditionText)]}, {LuaNumber((int)s.Hold)}, {s.Timeout} }},",
-				AssertStatement s => $"\t{{ \"assert\", {s.Line}, {conditions[(s.Condition, s.ConditionText)]}, {(s.Message == null ? "false" : LuaString(s.Message))} }},",
-				LabelStatement s => $"\t{{ \"label\", {s.Line}, {LuaString(s.Text)} }},",
-				_ => throw new InvalidOperationException($"unexpected step {step.GetType().Name}")
+				InputStatement s => $"\t{{ \"input\", {line}, {LuaNumber((int)s.Buttons)}, {s.Frames} }}, -- {ButtonNames.Format(layout.ToPlayer(s.Buttons))}",
+				WaitUntilStatement s => $"\t{{ \"wait\", {line}, {conditions[(s.Condition, s.ConditionText)]}, {LuaNumber((int)s.Hold)}, {s.Timeout} }},",
+				AssertStatement s => $"\t{{ \"assert\", {line}, {conditions[(s.Condition, s.ConditionText)]}, {(s.Message == null ? "false" : LuaString(s.Message))} }},",
+				LabelStatement s => $"\t{{ \"label\", {line}, {LuaString(s.Text)} }},",
+				_ => throw new InvalidOperationException($"unexpected step {statement.GetType().Name}")
 			});
 		}
 		lua.AppendLine("}");
@@ -147,25 +157,36 @@ public static class LuaGenerator
 			"@controller translates inputs to the game's default controller settings, but the game in this savestate is set up differently");
 	}
 
-	private static void Flatten(TasScript script, IReadOnlyList<Statement> statements, List<Statement> output)
+	/// <summary>A statement to play, plus where it came from when it's part of a routine.</summary>
+	private readonly record struct Step(Statement Statement, string? Where);
+
+	/// <summary>Expands repeat blocks and routine calls into a flat list of steps.</summary>
+	/// <param name="where">Null at the top level; inside a routine, e.g. "downback, called from line 40".</param>
+	private static void Flatten(TasScript script, IReadOnlyList<Statement> statements, List<Step> output, string? where, HashSet<Routine> called)
 	{
 		foreach (Statement statement in statements)
 		{
-			if (statement is RepeatStatement repeat)
+			switch (statement)
 			{
-				for (int i = 0; i < repeat.Count; i++)
-				{
-					Flatten(script, repeat.Body, output);
-				}
-			}
-			else
-			{
-				output.Add(statement);
+				case RepeatStatement repeat:
+					for (int i = 0; i < repeat.Count; i++)
+					{
+						Flatten(script, repeat.Body, output, where, called);
+					}
+					break;
+				case CallStatement call:
+					called.Add(call.Routine);
+					string callSite = $"{call.Routine.Name}, called from line {call.Line}";
+					Flatten(script, call.Routine.Body, output, where == null ? callSite : $"{callSite} in {where}", called);
+					break;
+				default:
+					output.Add(new Step(statement, where));
+					break;
 			}
 			if (output.Count > MaxSteps)
 			{
 				throw new ScriptException(script.SourceName, statement.Line, 1,
-					$"the script expands to more than {MaxSteps} steps; use fewer or smaller repeat blocks");
+					$"the script expands to more than {MaxSteps} steps; use fewer or smaller repeat blocks and calls");
 			}
 		}
 	}
@@ -307,7 +328,7 @@ public static class LuaGenerator
 
 		local function show(line, mask)
 			if not HUD then return end
-			draw(2, 2, string.format("SMSpardaTas  line %d  frame %d  %s", line, frame, MASKS[mask] or "?"))
+			draw(2, 2, string.format("SMSpardaTas  line %s  frame %d  %s", line, frame, MASKS[mask] or "?"))
 			if current_label ~= "" then draw(2, 14, current_label) end
 		end
 
@@ -319,7 +340,7 @@ public static class LuaGenerator
 		end
 
 		local function fail(line, message)
-			log(string.format("SMSpardaTas: %s line %d: %s (at playback frame %d)", SCRIPT, line, message, frame))
+			log(string.format("SMSpardaTas: %s line %s: %s (at playback frame %d)", SCRIPT, line, message, frame))
 			pause()
 		end
 
